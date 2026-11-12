@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f2">
+    <title>Job Radar — Mon profil</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/profile.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Job Radar, accueil">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>job<span class="brand-accent">radar</span></span>
+      </a>
+      <a class="back-link" href="/">← Retour aux offres</a>
+    </header>
+
+    <main class="page-shell profile-shell">
+      <section class="intro profile-intro">
+        <p class="eyebrow">VOTRE ESPACE</p>
+        <h1>Votre profil,<br><span>vos critères.</span></h1>
+        <p class="intro-copy">Décrivez ce que vous recherchez pour personnaliser votre veille.</p>
+      </section>
+
+      <form class="profile-card" id="profile-form">
+        <label class="field-label" for="titles">Intitulés de poste</label>
+        <input id="titles" name="titles" placeholder="Ex. Développeur Python, Data analyst">
+        <p class="field-hint">Séparez les intitulés par des virgules.</p>
+
+        <label class="field-label" for="skills">Compétences</label>
+        <input id="skills" name="skills" placeholder="Ex. Python, SQL, gestion de projet">
+        <p class="field-hint">Séparez les compétences par des virgules.</p>
+
+        <label class="field-label" for="locations">Lieux recherchés</label>
+        <input id="locations" name="locations" placeholder="Ex. Paris, Lyon, France">
+        <p class="field-hint">Séparez les lieux par des virgules.</p>
+
+        <label class="field-label" for="keywords">Mots-clés</label>
+        <input id="keywords" name="keywords" placeholder="Ex. junior, cybersécurité, startup">
+        <p class="field-hint">Séparez les mots-clés par des virgules.</p>
+
+        <label class="check-row" for="remote-only">
+          <input id="remote-only" name="remoteOnly" type="checkbox">
+          <span>Je recherche uniquement des offres en télétravail</span>
+        </label>
+
+        <div class="form-actions">
+          <a class="back-link" href="/">Annuler</a>
+          <button class="primary-button" type="submit">Enregistrer mon profil</button>
+        </div>
+        <p class="form-status" id="form-status" role="status"></p>
+      </form>
+      <p class="privacy-note">Votre profil est enregistré dans ce navigateur et n’est envoyé à aucun serveur.</p>
+    </main>
+  </body>
+</html>
