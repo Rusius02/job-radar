@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f2">
+    <title>Job Radar — Offres récentes</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Job Radar, accueil">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>job<span class="brand-accent">radar</span></span>
+      </a>
+      <a class="profile-link" href="/profile.html">
+        <span class="avatar" aria-hidden="true">↗</span>
+        <span>Mon profil</span>
+      </a>
+    </header>
+
+    <main class="page-shell">
+      <section class="intro">
+        <p class="eyebrow"><span class="live-dot"></span> VOTRE VEILLE EMPLOI</p>
+        <h1>Les bonnes opportunités,<br><span>au bon moment.</span></h1>
+        <p class="intro-copy">Retrouvez ici les cinq dernières offres repérées pour vous.</p>
+      </section>
+
+      <section class="offers-section" aria-labelledby="offers-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SÉLECTION RÉCENTE</p>
+            <h2 id="offers-title">Dernières annonces</h2>
+          </div>
+          <span class="count-pill" id="offer-count">… offre</span>
+        </div>
+        <div class="offer-list" id="offer-list" aria-live="polite">
+          <p class="state-card">Chargement des offres…</p>
+        </div>
+      </section>
+      <footer class="page-footer">Mis à jour à partir des offres enregistrées dans votre veille.</footer>
+    </main>
+  </body>
+</html>
