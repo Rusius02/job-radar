@@ -20,10 +20,6 @@ class JobProfile:
     keywords: tuple[str, ...] = ()
     remote_only: bool | None = None
 
-    def __post_init__(self) -> None:
-        if not any((self.desired_titles, self.skills, self.locations, self.keywords)) and self.remote_only is None:
-            raise JobPageAnalysisError("The profile must contain at least one preference.")
-
 
 @dataclass(frozen=True)
 class JobOffer:

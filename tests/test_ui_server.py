@@ -5,13 +5,17 @@ import unittest
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 from src.storage.database import JobRadarDatabase
+from src.engine.job_collection import collect_enabled_sites
 from src.ui.server import (
+    BELGIAN_SEARCH_LOCATIONS,
     COMMON_JOB_SITES,
     JobRadarHandler,
     JobRadarServer,
     import_legacy_offers,
+    seed_belgian_search_locations,
     seed_common_job_sites,
 )
 
@@ -71,6 +75,30 @@ class CommonJobSiteSeedTests(unittest.TestCase):
             suggestions = [site for site in sites if site["id"] != original["id"]]
             self.assertTrue(all(not site["is_enabled"] for site in suggestions))
             self.assertTrue(all(not site["terms_reviewed"] for site in suggestions))
+
+    def test_seed_sets_belgian_locations_only_when_preferences_are_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = JobRadarDatabase(Path(directory) / "job-radar.sqlite3")
+
+            self.assertTrue(seed_belgian_search_locations(database))
+            self.assertEqual(
+                database.get_profile()["preferences"]["desired_locations"],
+                list(BELGIAN_SEARCH_LOCATIONS),
+            )
+            self.assertFalse(seed_belgian_search_locations(database))
+
+    def test_seed_preserves_existing_search_locations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = JobRadarDatabase(Path(directory) / "job-radar.sqlite3")
+            profile = database.get_profile()
+            profile["preferences"]["desired_locations"] = ["Liège"]
+            database.save_profile(profile)
+
+            self.assertFalse(seed_belgian_search_locations(database))
+            self.assertEqual(
+                database.get_profile()["preferences"]["desired_locations"],
+                ["Liège"],
+            )
 
 
 class JobRadarApiTests(unittest.TestCase):
@@ -192,6 +220,71 @@ class JobRadarApiTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertIn("already in your list", result["error"])
 
+    def test_api_integrations_can_be_configured_and_managed(self) -> None:
+        status, integration = self.request_json(
+            "/api/integrations",
+            "POST",
+            {
+                "name": "Belgian jobs",
+                "url": "https://api.example.test/v1/jobs",
+                "method": "GET",
+                "query_params": {"location": "Bruxelles"},
+                "headers": {"Authorization": "Bearer secret"},
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(integration["header_names"], ["Authorization"])
+        self.assertNotIn("headers", integration)
+
+        status, integrations = self.request_json("/api/integrations")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(integrations), 1)
+
+        status, updated = self.request_json(
+            f"/api/integrations/{integration['id']}",
+            "PUT",
+            {
+                "name": "Belgian jobs",
+                "url": "https://api.example.test/v1/jobs",
+                "method": "POST",
+                "query_params": {},
+                "body": {"city": "Mons"},
+                "is_enabled": True,
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(updated["is_enabled"])
+        self.assertEqual(updated["method"], "POST")
+        self.assertEqual(updated["header_names"], ["Authorization"])
+
+        status, paused = self.request_json(
+            f"/api/integrations/{integration['id']}",
+            "PATCH",
+            {"is_enabled": False},
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(paused["is_enabled"])
+        self.assertEqual(
+            self.request_json(
+                f"/api/integrations/{integration['id']}", "DELETE"
+            )[0],
+            200,
+        )
+        self.assertEqual(self.request_json("/api/integrations")[1], [])
+
+    def test_api_integration_rejects_invalid_json_objects(self) -> None:
+        status, result = self.request_json(
+            "/api/integrations",
+            "POST",
+            {
+                "name": "Invalid",
+                "url": "https://api.example.test/jobs",
+                "query_params": ["not", "an", "object"],
+            },
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("query_params must be a JSON object", result["error"])
+
     def test_static_pages_send_the_body_advertised_by_content_length(self) -> None:
         for path, expected in (
             ("/", "Job Radar"),
@@ -205,6 +298,21 @@ class JobRadarApiTests(unittest.TestCase):
                     int(response.headers["Content-Length"]),
                 )
                 self.assertIn(expected.encode("utf-8"), body)
+
+    @patch("src.ui.server.collect_enabled_sites")
+    def test_collect_endpoint_is_explicitly_invoked_by_post(self, collect):
+        collect.return_value = {
+            "sites_attempted": 1,
+            "offers_found": 1,
+            "offers_saved": 1,
+            "results": [],
+        }
+
+        status, result = self.request_json("/api/collect", "POST", {})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["offers_saved"], 1)
+        collect.assert_called_once_with(self.database)
 
 
 if __name__ == "__main__":

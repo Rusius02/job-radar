@@ -36,8 +36,15 @@
             <p class="eyebrow">SÉLECTION RÉCENTE</p>
             <h2 id="offers-title">Dernières annonces</h2>
           </div>
-          <span class="count-pill" id="offer-count">… offre</span>
+          <div class="offer-controls">
+            <button class="fetch-button" id="fetch-offers" type="button">
+              <span aria-hidden="true">↻</span>
+              <span>Récupérer les offres</span>
+            </button>
+            <span class="count-pill" id="offer-count">… offre</span>
+          </div>
         </div>
+        <p class="collection-status" id="collection-status" role="status" aria-live="polite"></p>
         <div class="offer-list" id="offer-list" aria-live="polite">
           <p class="state-card">Chargement des offres…</p>
         </div>

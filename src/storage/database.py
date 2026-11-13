@@ -141,6 +141,19 @@ CREATE TABLE IF NOT EXISTS job_sites (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS api_integrations (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    method TEXT NOT NULL CHECK (method IN ('GET', 'POST')),
+    query_params_json TEXT NOT NULL DEFAULT '{}',
+    headers_json TEXT NOT NULL DEFAULT '{}',
+    body_json TEXT NOT NULL DEFAULT '{}',
+    is_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS offers (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -190,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_experiences_profile_order ON experiences(profile_
 CREATE INDEX IF NOT EXISTS idx_educations_profile_order ON educations(profile_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_projects_profile_order ON projects(profile_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_job_sites_enabled ON job_sites(is_enabled);
+CREATE INDEX IF NOT EXISTS idx_api_integrations_enabled ON api_integrations(is_enabled);
 """
 
 _PROFILE_TEXT_FIELDS = (
@@ -204,7 +218,7 @@ _PROFILE_TEXT_FIELDS = (
     "portfolio_url",
     "resume_url",
 )
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 class JobRadarDatabase:
@@ -330,6 +344,109 @@ class JobRadarDatabase:
     def delete_job_site(self, site_id: int) -> bool:
         with self._connection() as connection, connection:
             cursor = connection.execute("DELETE FROM job_sites WHERE id = ?", (site_id,))
+            return cursor.rowcount > 0
+
+    def list_api_integrations(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM api_integrations ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()
+            return [_api_integration_record(row) for row in rows]
+
+    def add_api_integration(
+        self,
+        name: str,
+        url: str,
+        *,
+        method: str = "GET",
+        query_params: Any = None,
+        headers: Any = None,
+        body: Any = None,
+        is_enabled: bool = False,
+    ) -> dict[str, Any]:
+        values = _validate_api_integration(
+            name, url, method, query_params, headers, body, is_enabled
+        )
+        now = _utc_now()
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                """INSERT INTO api_integrations
+                   (name, url, method, query_params_json, headers_json, body_json,
+                    is_enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (*values, now, now),
+            )
+            integration_id = cursor.lastrowid
+        return self.get_api_integration(integration_id)
+
+    def get_api_integration(self, integration_id: int) -> dict[str, Any]:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM api_integrations WHERE id = ?", (integration_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"API integration {integration_id} does not exist.")
+            return _api_integration_record(row)
+
+    def update_api_integration(
+        self,
+        integration_id: int,
+        name: str,
+        url: str,
+        *,
+        method: str = "GET",
+        query_params: Any = None,
+        headers: Any = None,
+        body: Any = None,
+        is_enabled: bool = False,
+        preserve_headers: bool = False,
+    ) -> dict[str, Any]:
+        values = _validate_api_integration(
+            name, url, method, query_params, headers, body, is_enabled
+        )
+        with self._connection() as connection, connection:
+            if preserve_headers:
+                cursor = connection.execute(
+                    """UPDATE api_integrations
+                       SET name = ?, url = ?, method = ?, query_params_json = ?,
+                           body_json = ?, is_enabled = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (
+                        *values[:4], values[5], values[6], _utc_now(), integration_id,
+                    ),
+                )
+            else:
+                cursor = connection.execute(
+                    """UPDATE api_integrations
+                       SET name = ?, url = ?, method = ?, query_params_json = ?,
+                           headers_json = ?, body_json = ?, is_enabled = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (*values, _utc_now(), integration_id),
+                )
+            if cursor.rowcount == 0:
+                raise ValueError(f"API integration {integration_id} does not exist.")
+        return self.get_api_integration(integration_id)
+
+    def update_api_integration_enabled(
+        self, integration_id: int, is_enabled: bool
+    ) -> dict[str, Any]:
+        if not isinstance(is_enabled, bool):
+            raise ValueError("is_enabled must be true or false.")
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                """UPDATE api_integrations SET is_enabled = ?, updated_at = ?
+                   WHERE id = ?""",
+                (int(is_enabled), _utc_now(), integration_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"API integration {integration_id} does not exist.")
+        return self.get_api_integration(integration_id)
+
+    def delete_api_integration(self, integration_id: int) -> bool:
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                "DELETE FROM api_integrations WHERE id = ?", (integration_id,)
+            )
             return cursor.rowcount > 0
 
     def get_profile(self, profile_id: int = 1) -> dict[str, Any]:
@@ -490,6 +607,24 @@ class JobRadarDatabase:
                 )
             self._replace_projects(connection, profile_id, profile.get("projects", []))
 
+        return self.get_profile(profile_id)
+
+    def set_desired_locations(
+        self, locations: list[str] | tuple[str, ...], profile_id: int = 1
+    ) -> dict[str, Any]:
+        normalized_locations = _string_list(locations)
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                """UPDATE profile_preferences SET desired_locations_json = ?
+                   WHERE profile_id = ?""",
+                (_json_dump(normalized_locations), profile_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Profile {profile_id} does not exist.")
+            connection.execute(
+                "UPDATE profiles SET updated_at = ? WHERE id = ?",
+                (_utc_now(), profile_id),
+            )
         return self.get_profile(profile_id)
 
     @staticmethod
@@ -728,6 +863,80 @@ def _record(row: sqlite3.Row, boolean_fields: tuple[str, ...] = ()) -> dict[str,
     for field in boolean_fields:
         result[field] = bool(result[field])
     return result
+
+
+def _api_integration_record(row: sqlite3.Row) -> dict[str, Any]:
+    result = {
+        key: row[key]
+        for key in (
+            "id", "name", "url", "method", "is_enabled", "created_at", "updated_at"
+        )
+    }
+    result["is_enabled"] = bool(result["is_enabled"])
+    result["query_params"] = json.loads(row["query_params_json"])
+    result["body"] = json.loads(row["body_json"])
+    headers = json.loads(row["headers_json"])
+    result["header_names"] = sorted(headers, key=str.casefold)
+    return result
+
+
+def _validate_api_integration(
+    name: Any,
+    url: Any,
+    method: Any,
+    query_params: Any,
+    headers: Any,
+    body: Any,
+    is_enabled: Any,
+) -> tuple[str, str, str, str, str, str, int]:
+    normalized_name = _text(name)
+    if not normalized_name or len(normalized_name) > 120:
+        raise ValueError("API name must be between 1 and 120 characters.")
+    normalized_url = _normalize_http_url(url)
+    normalized_method = _text(method).upper()
+    if normalized_method not in {"GET", "POST"}:
+        raise ValueError("API method must be GET or POST.")
+    if not isinstance(is_enabled, bool):
+        raise ValueError("is_enabled must be true or false.")
+
+    query_params = {} if query_params is None else query_params
+    headers = {} if headers is None else headers
+    body = {} if body is None else body
+    if not isinstance(query_params, dict) or any(
+        not isinstance(key, str) or not key.strip() for key in query_params
+    ):
+        raise ValueError("query_params must be a JSON object with non-empty string keys.")
+    if not isinstance(headers, dict):
+        raise ValueError("headers must be a JSON object.")
+    for key, value in headers.items():
+        if (
+            not isinstance(key, str)
+            or not key
+            or any(
+                not (
+                    char.isascii()
+                    and (char.isalnum() or char in "!#$%&'*+-.^_`|~")
+                )
+                for char in key
+            )
+        ):
+            raise ValueError("Header names must be valid HTTP token strings.")
+        if not isinstance(value, str) or "\r" in value or "\n" in value:
+            raise ValueError("Header values must be strings without line breaks.")
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object.")
+    if normalized_method == "GET" and body:
+        raise ValueError("GET integrations cannot have a request body.")
+
+    return (
+        normalized_name,
+        normalized_url,
+        normalized_method,
+        json.dumps(query_params, ensure_ascii=False),
+        json.dumps(headers, ensure_ascii=False),
+        json.dumps(body, ensure_ascii=False),
+        int(is_enabled),
+    )
 
 
 def _text(value: Any) -> str:

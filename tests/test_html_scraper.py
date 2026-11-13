@@ -66,6 +66,22 @@ class HtmlScraperTests(unittest.TestCase):
         self.assertEqual(result, "<html>ok</html>")
         self.assertEqual(open_request.call_count, 2)
 
+    def test_robots_error_does_not_expose_query_parameters(self) -> None:
+        class BlockedScraper(HtmlScraper):
+            def _robots_allows(self, parsed_url, url):
+                return False
+
+        scraper = BlockedScraper("JobRadarBot/1.0", min_interval=0)
+
+        with self.assertRaises(ScrapingNotAllowedError) as error:
+            scraper.fetch(
+                "https://example.com/jobs?session=private-token",
+                terms_reviewed=True,
+            )
+
+        self.assertIn("https://example.com/jobs", str(error.exception))
+        self.assertNotIn("private-token", str(error.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

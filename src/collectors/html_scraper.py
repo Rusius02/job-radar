@@ -46,7 +46,9 @@ class HtmlScraper:
 
         parsed_url = self._validate_url(url)
         if not self._robots_allows(parsed_url, url):
-            raise ScrapingNotAllowedError(f"robots.txt disallows scraping {url!r}.")
+            raise ScrapingNotAllowedError(
+                f"robots.txt disallows scraping {_display_url(url)!r}."
+            )
 
         request = urllib.request.Request(
             url,
@@ -79,7 +81,9 @@ class HtmlScraper:
                 ) from error
             raise ScrapingNotAllowedError(f"HTTP request failed with status {error.code}.") from error
         except urllib.error.URLError as error:
-            raise ScrapingNotAllowedError(f"Could not fetch {url!r}: {error.reason}") from error
+            raise ScrapingNotAllowedError(
+                f"Could not fetch {_display_url(url)!r}: {error.reason}"
+            ) from error
 
         if len(body) > self.max_bytes:
             raise ScrapingNotAllowedError(f"HTML response exceeds the {self.max_bytes}-byte limit.")
@@ -143,3 +147,10 @@ class HtmlScraper:
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def _display_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, "", "")
+    )

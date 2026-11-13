@@ -63,9 +63,12 @@ class JobAnalyzerTests(unittest.TestCase):
         self.assertEqual(result.offers_found, 0)
         self.assertTrue(result.warnings)
 
-    def test_invalid_profile_and_top_n_are_rejected(self) -> None:
-        with self.assertRaises(JobPageAnalysisError):
-            JobProfile()
+    def test_empty_profile_is_valid_for_extraction_and_top_n_is_validated(self) -> None:
+        result = self.analyzer.analyze(
+            "<html></html>",
+            JobProfile(),
+        )
+        self.assertEqual(result.offers_found, 0)
         with self.assertRaises(JobPageAnalysisError):
             self.analyzer.analyze("", JobProfile(skills=("Python",)), top_n=-1)
 

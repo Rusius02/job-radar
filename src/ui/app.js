@@ -1,5 +1,7 @@
 const offerList = document.querySelector("#offer-list");
 const offerCount = document.querySelector("#offer-count");
+const fetchButton = document.querySelector("#fetch-offers");
+const collectionStatus = document.querySelector("#collection-status");
 
 function formatDate(value) {
   if (!value) return "Date non précisée";
@@ -107,4 +109,51 @@ async function loadOffers() {
   }
 }
 
+function showCollectionResult(result) {
+  const messages = [
+    `Collecte terminée : ${result.offers_found} offre(s) trouvée(s), ${result.offers_saved} enregistrée(s).`,
+  ];
+  for (const warning of result.warnings || []) messages.push(warning);
+  for (const site of result.results || []) {
+    if (site.status === "success" && (!site.warnings || site.warnings.length === 0)) continue;
+    const detail = site.message || (site.warnings || []).join(" ");
+    messages.push(`${site.site} — ${site.status === "skipped" ? "ignoré" : site.status === "blocked" ? "bloqué" : site.status === "error" ? "erreur" : "avertissement"} : ${detail}`);
+  }
+  if (result.sites_attempted === 0) {
+    messages.push("Aucun site actif avec règles consultées. Vérifiez la page Paramètres.");
+  }
+  collectionStatus.textContent = messages.join(" ");
+  collectionStatus.classList.toggle(
+    "has-error",
+    result.results?.some((site) => ["blocked", "error", "skipped"].includes(site.status)) || false,
+  );
+}
+
+async function collectOffers() {
+  fetchButton.disabled = true;
+  fetchButton.classList.add("is-loading");
+  fetchButton.setAttribute("aria-busy", "true");
+  collectionStatus.classList.remove("has-error");
+  collectionStatus.textContent = "Récupération en cours. Seuls les sites actifs et marqués comme vérifiés sont tentés.";
+  try {
+    const response = await fetch("/api/collect", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Le serveur a répondu ${response.status}.`);
+    showCollectionResult(result);
+    await loadOffers();
+  } catch (error) {
+    collectionStatus.textContent = `Collecte impossible : ${error.message}`;
+    collectionStatus.classList.add("has-error");
+  } finally {
+    fetchButton.disabled = false;
+    fetchButton.classList.remove("is-loading");
+    fetchButton.removeAttribute("aria-busy");
+  }
+}
+
+fetchButton.addEventListener("click", collectOffers);
 loadOffers();

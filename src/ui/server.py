@@ -8,6 +8,7 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 from src.storage.database import DEFAULT_DATABASE_PATH, JobRadarDatabase
+from src.engine.job_collection import collect_enabled_sites
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +27,7 @@ COMMON_JOB_SITES = (
     ("Jobijoba", "https://www.jobijoba.com/fr/"),
     ("Glassdoor", "https://www.glassdoor.fr/"),
 )
+BELGIAN_SEARCH_LOCATIONS = ("Bruxelles", "Mons", "Tournai")
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -57,6 +59,21 @@ def seed_common_job_sites(database: JobRadarDatabase) -> int:
         added += 1
     database.set_metadata(migration_key, "true")
     return added
+
+
+def seed_belgian_search_locations(database: JobRadarDatabase) -> bool:
+    migration_key = "belgian_search_locations_seeded_v1"
+    if database.get_metadata(migration_key) == "true":
+        return False
+
+    profile = database.get_profile()
+    preferences = profile["preferences"]
+    seeded = not preferences["desired_locations"]
+    if seeded:
+        database.set_desired_locations(BELGIAN_SEARCH_LOCATIONS)
+
+    database.set_metadata(migration_key, "true")
+    return seeded
 
 
 def import_legacy_offers(database: JobRadarDatabase, path: Path = OFFERS_FILE) -> int:
@@ -103,6 +120,12 @@ class JobRadarHandler(BaseHTTPRequestHandler):
             except sqlite3.Error as error:
                 self._send_json(500, {"error": f"Database error: {error}"})
             return
+        if path == "/api/integrations":
+            try:
+                self._send_json(200, server.database.list_api_integrations())
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+            return
 
         static_file = STATIC_FILES.get(path)
         if static_file is None:
@@ -118,7 +141,33 @@ class JobRadarHandler(BaseHTTPRequestHandler):
         self._send(content, content_type)
 
     def do_PUT(self) -> None:
-        if urlsplit(self.path).path != "/api/profile":
+        path = urlsplit(self.path).path
+        if path.startswith("/api/integrations/"):
+            try:
+                integration_id = int(path.rsplit("/", 1)[1])
+                payload = self._read_json_body()
+                if not isinstance(payload, dict):
+                    raise ValueError("Request body must be a JSON object.")
+                integration = cast(JobRadarServer, self.server).database.update_api_integration(
+                    integration_id,
+                    payload.get("name", ""),
+                    payload.get("url", ""),
+                    method=payload.get("method", "GET"),
+                    query_params=payload.get("query_params"),
+                    headers=payload.get("headers"),
+                    body=payload.get("body"),
+                    is_enabled=payload.get("is_enabled", False),
+                    preserve_headers="headers" not in payload,
+                )
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+                return
+            self._send_json(200, integration)
+            return
+        if path != "/api/profile":
             self.send_error(404, "Not found")
             return
         try:
@@ -134,6 +183,22 @@ class JobRadarHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if path == "/api/collect":
+            try:
+                payload = self._read_json_body()
+                if payload != {}:
+                    raise ValueError("Request body must be an empty JSON object.")
+                result = collect_enabled_sites(
+                    cast(JobRadarServer, self.server).database
+                )
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+                return
+            self._send_json(200, result)
+            return
         if path == "/api/sites":
             try:
                 payload = self._read_json_body()
@@ -154,6 +219,28 @@ class JobRadarHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(201, site)
             return
+        if path == "/api/integrations":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict):
+                    raise ValueError("Request body must be a JSON object.")
+                integration = cast(JobRadarServer, self.server).database.add_api_integration(
+                    payload.get("name", ""),
+                    payload.get("url", ""),
+                    method=payload.get("method", "GET"),
+                    query_params=payload.get("query_params"),
+                    headers=payload.get("headers"),
+                    body=payload.get("body"),
+                    is_enabled=payload.get("is_enabled", False),
+                )
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+                return
+            self._send_json(201, integration)
+            return
         if path != "/api/offers":
             self.send_error(404, "Not found")
             return
@@ -170,7 +257,11 @@ class JobRadarHandler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         path_parts = urlsplit(self.path).path.strip("/").split("/")
-        if len(path_parts) != 3 or path_parts[:2] != ["api", "sites"]:
+        if (
+            len(path_parts) != 3
+            or path_parts[0] != "api"
+            or path_parts[1] not in {"sites", "integrations"}
+        ):
             self.send_error(404, "Not found")
             return
         try:
@@ -178,25 +269,39 @@ class JobRadarHandler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             if not isinstance(payload, dict) or set(payload) != {"is_enabled"}:
                 raise ValueError("Request body must contain only is_enabled.")
-            site = cast(JobRadarServer, self.server).database.update_job_site_enabled(
-                site_id, payload["is_enabled"]
-            )
+            database = cast(JobRadarServer, self.server).database
+            if path_parts[1] == "sites":
+                result = database.update_job_site_enabled(site_id, payload["is_enabled"])
+            else:
+                result = database.update_api_integration_enabled(
+                    site_id, payload["is_enabled"]
+                )
         except ValueError as error:
             self._send_json(400, {"error": str(error)})
             return
         except sqlite3.Error as error:
             self._send_json(500, {"error": f"Database error: {error}"})
             return
-        self._send_json(200, site)
+        self._send_json(200, result)
 
     def do_DELETE(self) -> None:
         path_parts = urlsplit(self.path).path.strip("/").split("/")
-        if len(path_parts) != 3 or path_parts[:2] != ["api", "sites"]:
+        if (
+            len(path_parts) != 3
+            or path_parts[0] != "api"
+            or path_parts[1] not in {"sites", "integrations"}
+        ):
             self.send_error(404, "Not found")
             return
         try:
             site_id = int(path_parts[2])
-            deleted = cast(JobRadarServer, self.server).database.delete_job_site(site_id)
+            database = cast(JobRadarServer, self.server).database
+            if path_parts[1] == "sites":
+                deleted = database.delete_job_site(site_id)
+                entity = "Website"
+            else:
+                deleted = database.delete_api_integration(site_id)
+                entity = "API integration"
         except ValueError as error:
             self._send_json(400, {"error": str(error)})
             return
@@ -204,7 +309,7 @@ class JobRadarHandler(BaseHTTPRequestHandler):
             self._send_json(500, {"error": f"Database error: {error}"})
             return
         if not deleted:
-            self._send_json(404, {"error": f"Website {site_id} does not exist."})
+            self._send_json(404, {"error": f"{entity} {site_id} does not exist."})
             return
         self._send_json(200, {"deleted": True, "id": site_id})
 
@@ -255,12 +360,15 @@ def main() -> None:
     database = JobRadarDatabase(DATABASE_FILE)
     imported = import_legacy_offers(database)
     seeded = seed_common_job_sites(database)
+    locations_seeded = seed_belgian_search_locations(database)
     server = JobRadarServer(("127.0.0.1", 8000), JobRadarHandler)
     server.database = database
     if imported:
         print(f"Imported {imported} legacy offer(s) from {OFFERS_FILE}.")
     if seeded:
         print(f"Added {seeded} common job site(s) in paused state.")
+    if locations_seeded:
+        print(f"Set initial search locations to {', '.join(BELGIAN_SEARCH_LOCATIONS)}.")
     print("Job Radar UI available at http://127.0.0.1:8000")
     try:
         server.serve_forever()
