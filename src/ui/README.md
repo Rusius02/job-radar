@@ -36,7 +36,9 @@ Le formulaire actuel met à jour les critères de recherche et les compétences 
 
 Au premier démarrage, les offres de l’ancien `data/offers.json` sont importées sans créer de doublons. Ce fichier n’est ensuite plus utilisé comme stockage principal.
 
-La page Paramètres permet d’ajouter, suspendre et supprimer des sites. La liste est vide au départ et n’effectue aucune requête vers les domaines enregistrés. La collecte réelle reste à connecter explicitement au moteur et doit continuer à vérifier les règles d’accès et conditions applicables pour chaque site.
+La page Paramètres permet d’ajouter, suspendre et supprimer des sites. Elle n’effectue aucune requête vers les domaines enregistrés. La collecte réelle reste à connecter explicitement au moteur et doit continuer à vérifier les règles d’accès et conditions applicables pour chaque site.
+
+Au premier démarrage après cette version, une liste de sites d’emploi connus est ajoutée en pause (sans doublonner les domaines déjà présents) : France Travail, Apec, Indeed, HelloWork, Welcome to the Jungle, LinkedIn Jobs, Cadremploi, Meteojob, Jobijoba et Glassdoor. Les sites ajoutés par l’utilisateur ne sont ni modifiés ni activés. Les suggestions restent de simples liens de veille : elles ne constituent pas une approbation juridique ou une vérification d’éligibilité au scraping.
 
 ## Exemple de profil
 

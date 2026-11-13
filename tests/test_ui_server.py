@@ -7,7 +7,13 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from src.storage.database import JobRadarDatabase
-from src.ui.server import JobRadarHandler, JobRadarServer, import_legacy_offers
+from src.ui.server import (
+    COMMON_JOB_SITES,
+    JobRadarHandler,
+    JobRadarServer,
+    import_legacy_offers,
+    seed_common_job_sites,
+)
 
 
 class LegacyOfferImportTests(unittest.TestCase):
@@ -39,6 +45,32 @@ class LegacyOfferImportTests(unittest.TestCase):
             root = Path(directory)
             database = JobRadarDatabase(root / "job-radar.sqlite3")
             self.assertEqual(import_legacy_offers(database, root / "missing.json"), 0)
+
+
+class CommonJobSiteSeedTests(unittest.TestCase):
+    def test_seed_adds_known_sites_once_without_overwriting_existing_domains(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = JobRadarDatabase(Path(directory) / "job-radar.sqlite3")
+            original = database.add_job_site(
+                "My LinkedIn search",
+                "https://www.linkedin.com/jobs/search/?keywords=Python",
+                terms_reviewed=True,
+                is_enabled=True,
+            )
+
+            added = seed_common_job_sites(database)
+            sites = database.list_job_sites()
+            repeated_seed = seed_common_job_sites(database)
+
+            self.assertEqual(added, len(COMMON_JOB_SITES) - 1)
+            self.assertEqual(repeated_seed, 0)
+            self.assertEqual(len(sites), len(COMMON_JOB_SITES))
+            preserved = next(site for site in sites if site["id"] == original["id"])
+            self.assertTrue(preserved["terms_reviewed"])
+            self.assertTrue(preserved["is_enabled"])
+            suggestions = [site for site in sites if site["id"] != original["id"]]
+            self.assertTrue(all(not site["is_enabled"] for site in suggestions))
+            self.assertTrue(all(not site["terms_reviewed"] for site in suggestions))
 
 
 class JobRadarApiTests(unittest.TestCase):

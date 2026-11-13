@@ -14,6 +14,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UI_ROOT = Path(__file__).resolve().parent
 OFFERS_FILE = PROJECT_ROOT / "data" / "offers.json"
 DATABASE_FILE = DEFAULT_DATABASE_PATH
+COMMON_JOB_SITES = (
+    ("France Travail", "https://www.francetravail.fr/accueil/"),
+    ("Apec", "https://www.apec.fr/"),
+    ("Indeed", "https://fr.indeed.com/"),
+    ("HelloWork", "https://www.hellowork.com/fr-fr/emploi.html"),
+    ("Welcome to the Jungle", "https://www.welcometothejungle.com/fr/jobs"),
+    ("LinkedIn Jobs", "https://www.linkedin.com/jobs/"),
+    ("Cadremploi", "https://www.cadremploi.fr/"),
+    ("Meteojob", "https://www.meteojob.com/"),
+    ("Jobijoba", "https://www.jobijoba.com/fr/"),
+    ("Glassdoor", "https://www.glassdoor.fr/"),
+)
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -24,6 +36,27 @@ STATIC_FILES = {
     "/profile.js": ("profile.js", "text/javascript; charset=utf-8"),
     "/settings.js": ("settings.js", "text/javascript; charset=utf-8"),
 }
+
+
+def seed_common_job_sites(database: JobRadarDatabase) -> int:
+    migration_key = "common_job_sites_seeded_v1"
+    if database.get_metadata(migration_key) == "true":
+        return 0
+
+    existing_hosts = {
+        (urlsplit(site["url"]).hostname or "").casefold()
+        for site in database.list_job_sites()
+    }
+    added = 0
+    for name, url in COMMON_JOB_SITES:
+        host = (urlsplit(url).hostname or "").casefold()
+        if host in existing_hosts:
+            continue
+        database.add_job_site(name, url, is_enabled=False, terms_reviewed=False)
+        existing_hosts.add(host)
+        added += 1
+    database.set_metadata(migration_key, "true")
+    return added
 
 
 def import_legacy_offers(database: JobRadarDatabase, path: Path = OFFERS_FILE) -> int:
@@ -221,10 +254,13 @@ class JobRadarHandler(BaseHTTPRequestHandler):
 def main() -> None:
     database = JobRadarDatabase(DATABASE_FILE)
     imported = import_legacy_offers(database)
+    seeded = seed_common_job_sites(database)
     server = JobRadarServer(("127.0.0.1", 8000), JobRadarHandler)
     server.database = database
     if imported:
         print(f"Imported {imported} legacy offer(s) from {OFFERS_FILE}.")
+    if seeded:
+        print(f"Added {seeded} common job site(s) in paused state.")
     print("Job Radar UI available at http://127.0.0.1:8000")
     try:
         server.serve_forever()
