@@ -39,6 +39,7 @@ class JobRadarDatabaseTests(unittest.TestCase):
             "projects",
             "project_skills",
             "job_sites",
+            "api_integrations",
             "offers",
             "offer_locations",
             "offer_skills",
@@ -62,7 +63,7 @@ class JobRadarDatabaseTests(unittest.TestCase):
         self.assertIn("projects", upgraded.get_profile())
         connection = sqlite3.connect(self.database.path)
         try:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
         finally:
             connection.close()
 
@@ -236,6 +237,57 @@ class JobRadarDatabaseTests(unittest.TestCase):
         self.database.add_job_site("Example", "https://example.com/jobs")
         with self.assertRaises(ValueError):
             self.database.add_job_site("Duplicate", "https://EXAMPLE.com/jobs/")
+
+    def test_api_integrations_store_request_configuration_without_exposing_headers(self) -> None:
+        integration = self.database.add_api_integration(
+            "Public jobs API",
+            "https://api.example.test/v1/jobs",
+            method="POST",
+            query_params={"location": "Bruxelles"},
+            headers={"Authorization": "Bearer secret"},
+            body={"keywords": ["Python"]},
+        )
+
+        self.assertEqual(integration["method"], "POST")
+        self.assertEqual(integration["query_params"], {"location": "Bruxelles"})
+        self.assertEqual(integration["body"], {"keywords": ["Python"]})
+        self.assertEqual(integration["header_names"], ["Authorization"])
+        self.assertNotIn("headers", integration)
+
+        updated = self.database.update_api_integration(
+            integration["id"],
+            "Public jobs API",
+            "https://api.example.test/v2/jobs",
+            method="GET",
+            query_params={"city": "Mons"},
+            body={},
+            is_enabled=True,
+            preserve_headers=True,
+        )
+        self.assertTrue(updated["is_enabled"])
+        self.assertEqual(updated["url"], "https://api.example.test/v2/jobs")
+        self.assertEqual(updated["header_names"], ["Authorization"])
+        self.assertEqual(self.database.list_api_integrations(), [updated])
+        self.assertTrue(self.database.delete_api_integration(integration["id"]))
+        self.assertFalse(self.database.delete_api_integration(integration["id"]))
+
+    def test_api_integration_rejects_invalid_methods_and_header_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "method must be GET or POST"):
+            self.database.add_api_integration(
+                "Invalid", "https://api.example.test/jobs", method="DELETE"
+            )
+        with self.assertRaisesRegex(ValueError, "without line breaks"):
+            self.database.add_api_integration(
+                "Invalid",
+                "https://api.example.test/jobs",
+                headers={"X-Test": "value\r\nInjected: true"},
+            )
+        with self.assertRaisesRegex(ValueError, "GET integrations cannot have a request body"):
+            self.database.add_api_integration(
+                "Invalid",
+                "https://api.example.test/jobs",
+                body={"search": "Python"},
+            )
 
 
 if __name__ == "__main__":

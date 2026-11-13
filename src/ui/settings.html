@@ -23,8 +23,8 @@
     <main class="page-shell profile-shell">
       <section class="intro profile-intro">
         <p class="eyebrow">CONFIGURATION DE VOTRE VEILLE</p>
-        <h1>Vos sites,<br><span>votre sélection.</span></h1>
-        <p class="intro-copy">Ajoutez les pages d’offres que vous souhaitez suivre, mettez-les en pause ou retirez-les.</p>
+        <h1>Vos sources,<br><span>vos réglages.</span></h1>
+        <p class="intro-copy">Gérez vos sites d’emploi et préparez les paramètres des API à connecter.</p>
       </section>
 
       <section class="settings-card" aria-labelledby="sites-heading">
@@ -72,7 +72,70 @@
         </div>
         <p class="form-status" id="site-list-status" role="status"></p>
       </section>
-      <p class="privacy-note">La liste de sites est stockée localement dans votre base SQLite.</p>
+
+      <section class="settings-card api-settings-card" aria-labelledby="integrations-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SOURCES STRUCTURÉES</p>
+            <h2 id="integrations-heading">APIs à connecter</h2>
+          </div>
+          <span class="count-pill" id="integration-count">… API</span>
+        </div>
+        <p class="settings-note">
+          Ces paramètres sont enregistrés localement, mais ne déclenchent pas encore de requêtes.
+          Chaque API devra être reliée à un connecteur qui sait interpréter ses réponses.
+          Les en-têtes (y compris les clés d’accès) sont conservés dans la base SQLite locale sans chiffrement.
+        </p>
+
+        <form class="site-form" id="integration-form">
+          <label class="field-label" for="integration-name">Nom de l’API</label>
+          <input id="integration-name" name="name" maxlength="120" placeholder="Ex. API d’offres publiques" required>
+
+          <label class="field-label" for="integration-url">URL de l’endpoint</label>
+          <input id="integration-url" name="url" type="url" placeholder="https://api.exemple.be/v1/jobs" required>
+
+          <label class="field-label" for="integration-method">Méthode HTTP</label>
+          <select id="integration-method" name="method">
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+          </select>
+
+          <label class="field-label" for="integration-query">Paramètres de requête (JSON)</label>
+          <textarea id="integration-query" name="query_params" rows="3" spellcheck="false">{}</textarea>
+
+          <label class="field-label" for="integration-headers">En-têtes HTTP (JSON)</label>
+          <textarea id="integration-headers" name="headers" rows="3" spellcheck="false" placeholder='{"Accept": "application/json"}'></textarea>
+          <p class="field-hint">En modification, laissez vide pour conserver les en-têtes existants.</p>
+          <label class="check-row" for="integration-clear-headers">
+            <input id="integration-clear-headers" name="clear_headers" type="checkbox">
+            <span>Effacer les en-têtes actuellement enregistrés</span>
+          </label>
+
+          <label class="field-label" for="integration-body">Corps JSON (POST)</label>
+          <textarea id="integration-body" name="body" rows="4" spellcheck="false">{}</textarea>
+
+          <div class="site-form-options">
+            <label class="check-row" for="integration-enabled">
+              <input id="integration-enabled" name="is_enabled" type="checkbox">
+              <span>Inclure dans ma liste active</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="primary-button" id="integration-submit" type="submit">Enregistrer l’API</button>
+            <button class="site-action" id="integration-cancel" type="button" hidden>Annuler la modification</button>
+          </div>
+          <p class="form-status" id="integration-form-status" role="status"></p>
+        </form>
+
+        <div class="site-list-heading">
+          <h2>Mes APIs</h2>
+        </div>
+        <div class="site-list" id="integration-list" aria-live="polite">
+          <p class="state-card">Chargement des APIs…</p>
+        </div>
+        <p class="form-status" id="integration-list-status" role="status"></p>
+      </section>
+      <p class="privacy-note">Vos sites et configurations d’API sont stockés dans la base SQLite locale.</p>
     </main>
   </body>
 </html>
