@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlsplit, urlunsplit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -130,6 +131,16 @@ CREATE TABLE IF NOT EXISTS project_skills (
     PRIMARY KEY (project_id, skill)
 );
 
+CREATE TABLE IF NOT EXISTS job_sites (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+    terms_reviewed INTEGER NOT NULL DEFAULT 0 CHECK (terms_reviewed IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS offers (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -178,6 +189,7 @@ CREATE INDEX IF NOT EXISTS idx_offers_first_seen ON offers(first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_experiences_profile_order ON experiences(profile_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_educations_profile_order ON educations(profile_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_projects_profile_order ON projects(profile_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_job_sites_enabled ON job_sites(is_enabled);
 """
 
 _PROFILE_TEXT_FIELDS = (
@@ -192,7 +204,7 @@ _PROFILE_TEXT_FIELDS = (
     "portfolio_url",
     "resume_url",
 )
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 class JobRadarDatabase:
@@ -249,6 +261,76 @@ class JobRadarDatabase:
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
                 (key, value),
             )
+
+    def list_job_sites(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM job_sites ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()
+            return [_record(row, ("is_enabled", "terms_reviewed")) for row in rows]
+
+    def add_job_site(
+        self,
+        name: str,
+        url: str,
+        *,
+        terms_reviewed: bool = False,
+        is_enabled: bool = True,
+    ) -> dict[str, Any]:
+        site_name = _text(name)
+        if not site_name:
+            raise ValueError("Site name is required.")
+        if len(site_name) > 120:
+            raise ValueError("Site name cannot exceed 120 characters.")
+        if not isinstance(terms_reviewed, bool) or not isinstance(is_enabled, bool):
+            raise ValueError("terms_reviewed and is_enabled must be true or false.")
+        normalized_url = _normalize_http_url(url)
+        now = _utc_now()
+        try:
+            with self._connection() as connection, connection:
+                cursor = connection.execute(
+                    """INSERT INTO job_sites
+                       (name, url, is_enabled, terms_reviewed, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        site_name,
+                        normalized_url,
+                        int(is_enabled),
+                        int(terms_reviewed),
+                        now,
+                        now,
+                    ),
+                )
+                site_id = cursor.lastrowid
+        except sqlite3.IntegrityError as error:
+            raise ValueError("This website is already in your list.") from error
+        return self.get_job_site(site_id)
+
+    def get_job_site(self, site_id: int) -> dict[str, Any]:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM job_sites WHERE id = ?", (site_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Website {site_id} does not exist.")
+            return _record(row, ("is_enabled", "terms_reviewed"))
+
+    def update_job_site_enabled(self, site_id: int, is_enabled: bool) -> dict[str, Any]:
+        if not isinstance(is_enabled, bool):
+            raise ValueError("is_enabled must be true or false.")
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                "UPDATE job_sites SET is_enabled = ?, updated_at = ? WHERE id = ?",
+                (int(is_enabled), _utc_now(), site_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Website {site_id} does not exist.")
+        return self.get_job_site(site_id)
+
+    def delete_job_site(self, site_id: int) -> bool:
+        with self._connection() as connection, connection:
+            cursor = connection.execute("DELETE FROM job_sites WHERE id = ?", (site_id,))
+            return cursor.rowcount > 0
 
     def get_profile(self, profile_id: int = 1) -> dict[str, Any]:
         with self._connection() as connection:
@@ -705,6 +787,31 @@ def _normalize_date(value: Any) -> str | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _normalize_http_url(value: Any) -> str:
+    url = _text(value)
+    if not url or len(url) > 2048:
+        raise ValueError("Website URL must be between 1 and 2048 characters.")
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("Website URL is invalid.") from error
+    if parsed.scheme.casefold() not in {"http", "https"} or not hostname:
+        raise ValueError("Website URL must use http or https and include a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Website URLs containing credentials are not allowed.")
+    netloc = hostname.casefold()
+    if ":" in netloc and not netloc.startswith("["):
+        netloc = f"[{netloc}]"
+    if port is not None:
+        netloc = f"{netloc}:{port}"
+    path = parsed.path.rstrip("/")
+    return urlunsplit(
+        (parsed.scheme.casefold(), netloc, path, parsed.query, "")
+    )
 
 
 def _utc_now() -> str:

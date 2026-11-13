@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f2">
+    <title>Job Radar — Paramètres</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/settings.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Job Radar, accueil">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>job<span class="brand-accent">radar</span></span>
+      </a>
+      <nav class="top-actions" aria-label="Navigation principale">
+        <a class="settings-link active" href="/settings.html" aria-current="page"><span aria-hidden="true">⚙</span><span>Paramètres</span></a>
+        <a class="back-link" href="/profile.html">Profil</a>
+      </nav>
+    </header>
+
+    <main class="page-shell profile-shell">
+      <section class="intro profile-intro">
+        <p class="eyebrow">CONFIGURATION DE VOTRE VEILLE</p>
+        <h1>Vos sites,<br><span>votre sélection.</span></h1>
+        <p class="intro-copy">Ajoutez les pages d’offres que vous souhaitez suivre, mettez-les en pause ou retirez-les.</p>
+      </section>
+
+      <section class="settings-card" aria-labelledby="sites-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SOURCES DE VEILLE</p>
+            <h2 id="sites-heading">Sites d’emploi</h2>
+          </div>
+          <span class="count-pill" id="site-count">… site</span>
+        </div>
+        <p class="settings-note">
+          Enregistrer un site ne lance pas de collecte. Avant tout scraping, vérifiez les règles du site et le droit applicable.
+          La case ci-dessous mémorise uniquement que vous avez effectué cette vérification ; elle ne vaut pas autorisation.
+        </p>
+
+        <form class="site-form" id="site-form">
+          <label class="field-label" for="site-name">Nom du site</label>
+          <input id="site-name" name="name" maxlength="120" placeholder="Ex. Espace carrières — Entreprise" required>
+
+          <label class="field-label" for="site-url">URL de la page des offres</label>
+          <input id="site-url" name="url" type="url" placeholder="https://exemple.fr/carrieres" required>
+
+          <div class="site-form-options">
+            <label class="check-row" for="site-enabled">
+              <input id="site-enabled" name="is_enabled" type="checkbox" checked>
+              <span>Inclure dans ma liste active</span>
+            </label>
+            <label class="check-row" for="terms-reviewed">
+              <input id="terms-reviewed" name="terms_reviewed" type="checkbox">
+              <span>J’ai consulté les règles et conditions du site</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="primary-button" type="submit">Ajouter ce site</button>
+          </div>
+          <p class="form-status" id="site-form-status" role="status"></p>
+        </form>
+
+        <div class="site-list-heading">
+          <h2>Ma liste</h2>
+        </div>
+        <div class="site-list" id="site-list" aria-live="polite">
+          <p class="state-card">Chargement des sites…</p>
+        </div>
+        <p class="form-status" id="site-list-status" role="status"></p>
+      </section>
+      <p class="privacy-note">La liste de sites est stockée localement dans votre base SQLite.</p>
+    </main>
+  </body>
+</html>

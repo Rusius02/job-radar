@@ -18,9 +18,11 @@ STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/profile.html": ("profile.html", "text/html; charset=utf-8"),
+    "/settings.html": ("settings.html", "text/html; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/profile.js": ("profile.js", "text/javascript; charset=utf-8"),
+    "/settings.js": ("settings.js", "text/javascript; charset=utf-8"),
 }
 
 
@@ -62,6 +64,12 @@ class JobRadarHandler(BaseHTTPRequestHandler):
             except sqlite3.Error as error:
                 self._send_json(500, {"error": f"Database error: {error}"})
             return
+        if path == "/api/sites":
+            try:
+                self._send_json(200, server.database.list_job_sites())
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+            return
 
         static_file = STATIC_FILES.get(path)
         if static_file is None:
@@ -92,7 +100,28 @@ class JobRadarHandler(BaseHTTPRequestHandler):
         self._send_json(200, saved)
 
     def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/api/offers":
+        path = urlsplit(self.path).path
+        if path == "/api/sites":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict):
+                    raise ValueError("Request body must be a JSON object.")
+                site = cast(JobRadarServer, self.server).database.add_job_site(
+                    payload.get("name", ""),
+                    payload.get("url", ""),
+                    terms_reviewed=payload.get("terms_reviewed", False),
+                    is_enabled=payload.get("is_enabled", True),
+                )
+            except ValueError as error:
+                status = 409 if "already in your list" in str(error) else 400
+                self._send_json(status, {"error": str(error)})
+                return
+            except sqlite3.Error as error:
+                self._send_json(500, {"error": f"Database error: {error}"})
+                return
+            self._send_json(201, site)
+            return
+        if path != "/api/offers":
             self.send_error(404, "Not found")
             return
         try:
@@ -105,6 +134,46 @@ class JobRadarHandler(BaseHTTPRequestHandler):
             self._send_json(500, {"error": f"Database error: {error}"})
             return
         self._send_json(201, {"id": offer_id})
+
+    def do_PATCH(self) -> None:
+        path_parts = urlsplit(self.path).path.strip("/").split("/")
+        if len(path_parts) != 3 or path_parts[:2] != ["api", "sites"]:
+            self.send_error(404, "Not found")
+            return
+        try:
+            site_id = int(path_parts[2])
+            payload = self._read_json_body()
+            if not isinstance(payload, dict) or set(payload) != {"is_enabled"}:
+                raise ValueError("Request body must contain only is_enabled.")
+            site = cast(JobRadarServer, self.server).database.update_job_site_enabled(
+                site_id, payload["is_enabled"]
+            )
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        except sqlite3.Error as error:
+            self._send_json(500, {"error": f"Database error: {error}"})
+            return
+        self._send_json(200, site)
+
+    def do_DELETE(self) -> None:
+        path_parts = urlsplit(self.path).path.strip("/").split("/")
+        if len(path_parts) != 3 or path_parts[:2] != ["api", "sites"]:
+            self.send_error(404, "Not found")
+            return
+        try:
+            site_id = int(path_parts[2])
+            deleted = cast(JobRadarServer, self.server).database.delete_job_site(site_id)
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        except sqlite3.Error as error:
+            self._send_json(500, {"error": f"Database error: {error}"})
+            return
+        if not deleted:
+            self._send_json(404, {"error": f"Website {site_id} does not exist."})
+            return
+        self._send_json(200, {"deleted": True, "id": site_id})
 
     def _send_offers(self) -> None:
         try:
@@ -143,6 +212,7 @@ class JobRadarHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
+        self.wfile.write(content)
 
     def log_message(self, format: str, *args: Any) -> None:
         print(f"{self.address_string()} - {format % args}")

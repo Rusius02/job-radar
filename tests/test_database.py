@@ -38,6 +38,7 @@ class JobRadarDatabaseTests(unittest.TestCase):
             "profile_links",
             "projects",
             "project_skills",
+            "job_sites",
             "offers",
             "offer_locations",
             "offer_skills",
@@ -61,7 +62,7 @@ class JobRadarDatabaseTests(unittest.TestCase):
         self.assertIn("projects", upgraded.get_profile())
         connection = sqlite3.connect(self.database.path)
         try:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
         finally:
             connection.close()
 
@@ -209,6 +210,32 @@ class JobRadarDatabaseTests(unittest.TestCase):
             })
 
         self.assertEqual(self.database.list_recent_offers()[0]["title"], "Original")
+
+    def test_job_sites_can_be_added_paused_and_removed(self) -> None:
+        site = self.database.add_job_site(
+            "Example Careers",
+            "HTTPS://EXAMPLE.COM/jobs/",
+            terms_reviewed=True,
+        )
+        self.assertEqual(site["url"], "https://example.com/jobs")
+        self.assertTrue(site["is_enabled"])
+        self.assertTrue(site["terms_reviewed"])
+
+        paused = self.database.update_job_site_enabled(site["id"], False)
+        self.assertFalse(paused["is_enabled"])
+        self.assertEqual(self.database.list_job_sites(), [paused])
+
+        self.assertTrue(self.database.delete_job_site(site["id"]))
+        self.assertFalse(self.database.delete_job_site(site["id"]))
+        self.assertEqual(self.database.list_job_sites(), [])
+
+    def test_job_sites_validate_urls_and_reject_duplicates(self) -> None:
+        with self.assertRaises(ValueError):
+            self.database.add_job_site("Invalid", "file:///etc/passwd")
+
+        self.database.add_job_site("Example", "https://example.com/jobs")
+        with self.assertRaises(ValueError):
+            self.database.add_job_site("Duplicate", "https://EXAMPLE.com/jobs/")
 
 
 if __name__ == "__main__":

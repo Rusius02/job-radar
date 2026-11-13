@@ -119,6 +119,61 @@ class JobRadarApiTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("title is required", result["error"])
 
+    def test_job_sites_can_be_added_paused_and_deleted_via_api(self) -> None:
+        status, site = self.request_json(
+            "/api/sites",
+            "POST",
+            {
+                "name": "Example Careers",
+                "url": "https://example.com/jobs",
+                "terms_reviewed": True,
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(site["name"], "Example Careers")
+        self.assertTrue(site["terms_reviewed"])
+
+        status, sites = self.request_json("/api/sites")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(sites), 1)
+
+        status, updated = self.request_json(
+            f"/api/sites/{site['id']}",
+            "PATCH",
+            {"is_enabled": False},
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(updated["is_enabled"])
+
+        status, result = self.request_json(
+            f"/api/sites/{site['id']}",
+            "DELETE",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["deleted"])
+        self.assertEqual(self.request_json("/api/sites")[1], [])
+
+    def test_duplicate_site_returns_conflict(self) -> None:
+        payload = {"name": "Example", "url": "https://example.com/jobs"}
+        self.assertEqual(self.request_json("/api/sites", "POST", payload)[0], 201)
+        status, result = self.request_json("/api/sites", "POST", payload)
+        self.assertEqual(status, 409)
+        self.assertIn("already in your list", result["error"])
+
+    def test_static_pages_send_the_body_advertised_by_content_length(self) -> None:
+        for path, expected in (
+            ("/", "Job Radar"),
+            ("/settings.html", "Sites d’emploi"),
+        ):
+            with urlopen(self.base_url + path) as response:
+                body = response.read()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(
+                    len(body),
+                    int(response.headers["Content-Length"]),
+                )
+                self.assertIn(expected.encode("utf-8"), body)
+
 
 if __name__ == "__main__":
     unittest.main()

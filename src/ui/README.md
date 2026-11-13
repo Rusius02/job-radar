@@ -14,6 +14,7 @@ Puis ouvrir <http://127.0.0.1:8000>. Le serveur écoute uniquement sur `127.0.0.
 
 - `profiles` contient les informations principales d’un profil local unique, et `profile_preferences` ses critères, salaires souhaités et types de contrat.
 - `app_metadata` mémorise les migrations ponctuelles de données locales.
+- `job_sites` conserve la liste des sites à suivre, leur URL, leur activation et la confirmation de revue des règles. Cette confirmation n’est pas une autorisation juridique.
 - `profile_skills`, `experiences`, `educations`, `certifications`, `profile_languages`, `profile_links` et `projects` stockent ses éléments structurés.
 - `offers` contient les annonces et leur état de suivi (`new`, `saved`, `applied`, `dismissed`). `offer_locations`, `offer_skills` et `offer_employment_types` portent leurs attributs multiples.
 - `offer_matches` conserve le score et les raisons de correspondance entre le profil et l’offre.
@@ -26,10 +27,16 @@ L’offre est dédupliquée avec son URL source. `first_seen_at` conserve la pre
 - `POST /api/offers` : enregistre ou met à jour une offre et ses attributs. En cas de score, fournir `score` (0–100) et éventuellement `reasons`.
 - `GET /api/profile` : retourne le profil complet.
 - `PUT /api/profile` : remplace les champs/listes du profil transmis dans une transaction. Omettre une collection revient à l’effacer ; inclure les collections à conserver.
+- `GET /api/sites` : liste les sites enregistrés.
+- `POST /api/sites` : ajoute un site (`name`, `url`, `terms_reviewed` facultatif, `is_enabled` facultatif). Les URL sont limitées à HTTP(S), sans identifiants intégrés.
+- `PATCH /api/sites/{id}` : active ou met en pause un site (`is_enabled`).
+- `DELETE /api/sites/{id}` : retire le site.
 
 Le formulaire actuel met à jour les critères de recherche et les compétences via ces routes. Le dépôt SQLite prend également en charge les coordonnées, résumé, expériences, formations, certifications, langues et liens via `save_profile`.
 
 Au premier démarrage, les offres de l’ancien `data/offers.json` sont importées sans créer de doublons. Ce fichier n’est ensuite plus utilisé comme stockage principal.
+
+La page Paramètres permet d’ajouter, suspendre et supprimer des sites. La liste est vide au départ et n’effectue aucune requête vers les domaines enregistrés. La collecte réelle reste à connecter explicitement au moteur et doit continuer à vérifier les règles d’accès et conditions applicables pour chaque site.
 
 ## Exemple de profil
 
